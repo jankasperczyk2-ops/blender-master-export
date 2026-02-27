@@ -18,10 +18,18 @@ def find_or_create_collection(parent_collection, name):
     return new_col
 
 
-def setup_asset_hierarchy(context, asset_name):
-    scene_col = context.scene.collection
+MASTER_COLLECTION_NAME = "MasterExport"
 
-    asset_col = find_or_create_collection(scene_col, get_collection_name(asset_name))
+
+def get_or_create_master_collection(context):
+    scene_col = context.scene.collection
+    return find_or_create_collection(scene_col, MASTER_COLLECTION_NAME)
+
+
+def setup_asset_hierarchy(context, asset_name):
+    master_col = get_or_create_master_collection(context)
+
+    asset_col = find_or_create_collection(master_col, get_collection_name(asset_name))
     parent_col = find_or_create_collection(asset_col, get_parent_collection_name(asset_name))
     geo_col = find_or_create_collection(asset_col, get_geometry_collection_name(asset_name))
     collider_col = find_or_create_collection(asset_col, get_colliders_collection_name(asset_name))
