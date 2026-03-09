@@ -3,7 +3,7 @@ import bmesh
 from bpy.types import Operator
 from mathutils import Vector
 
-from ..utils.hierarchy import MASTER_COLLECTION_NAME
+from ..utils.hierarchy import MASTER_COLLECTION_NAME, find_asset_from_empty
 
 
 def _get_master_collection():
@@ -89,121 +89,132 @@ def _check_rotation(obj):
     return not (abs(r.x) < 0.001 and abs(r.y) < 0.001 and abs(r.z) < 0.001)
 
 
-def _has_colliders_in_collection(collection):
-    for child_col in collection.children:
-        if child_col.name == "Colliders":
-            if len(child_col.objects) > 0:
-                return True
-        if _has_colliders_in_collection(child_col):
-            return True
-    return False
+def _is_collider_name(name):
+    return (
+        name.startswith("UCX_") or name.startswith("UBX_") or
+        name.startswith("USP_") or name.startswith("UCP_") or
+        name.startswith("COL_")
+    )
 
 
-class MASTEREXPORT_OT_RunCheck(Operator):
-    bl_idname = "master_export.run_check"
-    bl_label = "Run Export Check"
-    bl_description = "Analyze all meshes in MasterExport for issues"
-    bl_options = {'REGISTER'}
+def run_auto_check(context):
+    props = context.scene.master_export
+    props.check_results.clear()
+    props.check_total_tris = 0
+    props.check_issues_found = 0
+    props.check_has_colliders = False
 
-    def execute(self, context):
-        props = context.scene.master_export
+    active = context.active_object
+    asset_info = find_asset_from_empty(active)
+    if asset_info is None:
+        return
 
-        master_col = _get_master_collection()
-        if master_col is None:
-            self.report({'ERROR'}, "MasterExport collection not found. Run Set Export first.")
-            return {'CANCELLED'}
+    geo_col = asset_info.get('geo_col')
+    collider_col = asset_info.get('collider_col')
 
-        props.check_results.clear()
+    if geo_col is None:
+        return
 
-        mesh_objects = _get_all_mesh_objects(master_col)
+    geometry_meshes = [obj for obj in geo_col.objects if obj.type == 'MESH']
 
-        is_collider_name = lambda n: (
-            n.startswith("UCX_") or n.startswith("UBX_") or
-            n.startswith("USP_") or n.startswith("UCP_") or
-            n.startswith("COL_")
-        )
-        geometry_meshes = [obj for obj in mesh_objects if not is_collider_name(obj.name)]
+    total_tris = 0
+    issues = 0
 
-        total_tris = 0
-        issues = 0
+    for obj in geometry_meshes:
+        result = props.check_results.add()
+        result.obj_name = obj.name
 
-        for obj in geometry_meshes:
-            result = props.check_results.add()
-            result.obj_name = obj.name
+        tri_count = _count_triangles(obj)
+        result.tri_count = tri_count
+        total_tris += tri_count
 
-            tri_count = _count_triangles(obj)
-            result.tri_count = tri_count
-            total_tris += tri_count
-
-            doubles = _count_doubles(obj)
-            result.has_doubles = doubles > 0
-            result.doubles_count = doubles
-            if doubles > 0:
-                issues += 1
-
-            flipped = _count_flipped_normals(obj)
-            result.has_flipped = flipped > 0
-            result.flipped_count = flipped
-            if flipped > 0:
-                issues += 1
-
-            bad_scale = _check_scale(obj)
-            result.bad_scale = bad_scale
-            result.scale_values = f"{obj.scale.x:.3f}, {obj.scale.y:.3f}, {obj.scale.z:.3f}"
-            if bad_scale:
-                issues += 1
-
-            bad_rot = _check_rotation(obj)
-            result.bad_rotation = bad_rot
-            result.rotation_values = f"{obj.rotation_euler.x:.3f}, {obj.rotation_euler.y:.3f}, {obj.rotation_euler.z:.3f}"
-            if bad_rot:
-                issues += 1
-
-        props.check_has_colliders = _has_colliders_in_collection(master_col)
-        if not props.check_has_colliders:
+        doubles = _count_doubles(obj)
+        result.has_doubles = doubles > 0
+        result.doubles_count = doubles
+        if doubles > 0:
             issues += 1
 
-        props.check_total_tris = total_tris
-        props.check_issues_found = issues
-        props.check_performed = True
+        flipped = _count_flipped_normals(obj)
+        result.has_flipped = flipped > 0
+        result.flipped_count = flipped
+        if flipped > 0:
+            issues += 1
 
-        self.report({'INFO'}, f"Check complete: {len(geometry_meshes)} meshes, {total_tris} tris, {issues} issue(s)")
-        return {'FINISHED'}
+        bad_scale = _check_scale(obj)
+        result.bad_scale = bad_scale
+        result.scale_values = f"{obj.scale.x:.3f}, {obj.scale.y:.3f}, {obj.scale.z:.3f}"
+        if bad_scale:
+            issues += 1
+
+        bad_rot = _check_rotation(obj)
+        result.bad_rotation = bad_rot
+        result.rotation_values = f"{obj.rotation_euler.x:.3f}, {obj.rotation_euler.y:.3f}, {obj.rotation_euler.z:.3f}"
+        if bad_rot:
+            issues += 1
+
+    has_colliders = collider_col is not None and len(collider_col.objects) > 0
+    props.check_has_colliders = has_colliders
+    if not has_colliders:
+        issues += 1
+
+    props.check_total_tris = total_tris
+    props.check_issues_found = issues
+
+
+def _get_geometry_targets(context, obj_name=""):
+    active = context.active_object
+    asset_info = find_asset_from_empty(active)
+
+    if asset_info is None:
+        master_col = _get_master_collection()
+        if master_col is None:
+            return []
+        all_meshes = _get_all_mesh_objects(master_col)
+        targets = [obj for obj in all_meshes if not _is_collider_name(obj.name)]
+    else:
+        geo_col = asset_info.get('geo_col')
+        if geo_col is None:
+            return []
+        targets = [obj for obj in geo_col.objects if obj.type == 'MESH']
+
+    if obj_name:
+        targets = [obj for obj in targets if obj.name == obj_name]
+
+    return targets
 
 
 class MASTEREXPORT_OT_FixDoubles(Operator):
     bl_idname = "master_export.fix_doubles"
     bl_label = "Fix Double Vertices"
-    bl_description = "Merge vertices by distance on all geometry meshes"
+    bl_description = "Merge vertices by distance"
     bl_options = {'REGISTER', 'UNDO'}
 
     obj_name: bpy.props.StringProperty(default="")
 
-    def execute(self, context):
-        master_col = _get_master_collection()
-        if master_col is None:
-            return {'CANCELLED'}
+    @classmethod
+    def poll(cls, context):
+        active = context.active_object
+        if active and active.type == 'EMPTY' and active.name.startswith("SM_"):
+            return True
+        return False
 
-        if self.obj_name:
-            targets = [bpy.data.objects.get(self.obj_name)]
-            targets = [t for t in targets if t and t.type == 'MESH']
-        else:
-            targets = _get_all_mesh_objects(master_col)
-            targets = [obj for obj in targets if obj.type == 'MESH']
+    def execute(self, context):
+        targets = _get_geometry_targets(context, self.obj_name)
+        if not targets:
+            self.report({'WARNING'}, "No geometry meshes found")
+            return {'CANCELLED'}
 
         fixed = 0
         for obj in targets:
             bm = bmesh.new()
             bm.from_mesh(obj.data)
-            result = bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=0.0001)
-            removed = len(result.get('verts', []))
-            if removed is None:
-                removed = 0
+            bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=0.0001)
             bm.to_mesh(obj.data)
             bm.free()
             obj.data.update()
             fixed += 1
 
+        run_auto_check(context)
         self.report({'INFO'}, f"Fixed doubles on {fixed} mesh(es)")
         return {'FINISHED'}
 
@@ -211,22 +222,23 @@ class MASTEREXPORT_OT_FixDoubles(Operator):
 class MASTEREXPORT_OT_FixNormals(Operator):
     bl_idname = "master_export.fix_normals"
     bl_label = "Fix Normals"
-    bl_description = "Recalculate normals outside on all geometry meshes"
+    bl_description = "Recalculate normals outside"
     bl_options = {'REGISTER', 'UNDO'}
 
     obj_name: bpy.props.StringProperty(default="")
 
-    def execute(self, context):
-        master_col = _get_master_collection()
-        if master_col is None:
-            return {'CANCELLED'}
+    @classmethod
+    def poll(cls, context):
+        active = context.active_object
+        if active and active.type == 'EMPTY' and active.name.startswith("SM_"):
+            return True
+        return False
 
-        if self.obj_name:
-            targets = [bpy.data.objects.get(self.obj_name)]
-            targets = [t for t in targets if t and t.type == 'MESH']
-        else:
-            targets = _get_all_mesh_objects(master_col)
-            targets = [obj for obj in targets if obj.type == 'MESH']
+    def execute(self, context):
+        targets = _get_geometry_targets(context, self.obj_name)
+        if not targets:
+            self.report({'WARNING'}, "No geometry meshes found")
+            return {'CANCELLED'}
 
         fixed = 0
         for obj in targets:
@@ -238,6 +250,7 @@ class MASTEREXPORT_OT_FixNormals(Operator):
             obj.data.update()
             fixed += 1
 
+        run_auto_check(context)
         self.report({'INFO'}, f"Fixed normals on {fixed} mesh(es)")
         return {'FINISHED'}
 
@@ -245,23 +258,25 @@ class MASTEREXPORT_OT_FixNormals(Operator):
 class MASTEREXPORT_OT_FixTransforms(Operator):
     bl_idname = "master_export.fix_transforms"
     bl_label = "Apply Transforms"
-    bl_description = "Apply rotation and scale on all geometry meshes"
+    bl_description = "Apply rotation and scale"
     bl_options = {'REGISTER', 'UNDO'}
 
     obj_name: bpy.props.StringProperty(default="")
 
+    @classmethod
+    def poll(cls, context):
+        active = context.active_object
+        if active and active.type == 'EMPTY' and active.name.startswith("SM_"):
+            return True
+        return False
+
     def execute(self, context):
-        master_col = _get_master_collection()
-        if master_col is None:
+        targets = _get_geometry_targets(context, self.obj_name)
+        if not targets:
+            self.report({'WARNING'}, "No geometry meshes found")
             return {'CANCELLED'}
 
-        if self.obj_name:
-            targets = [bpy.data.objects.get(self.obj_name)]
-            targets = [t for t in targets if t and t.type == 'MESH']
-        else:
-            targets = _get_all_mesh_objects(master_col)
-            targets = [obj for obj in targets if obj.type == 'MESH']
-
+        prev_active = context.active_object
         bpy.ops.object.select_all(action='DESELECT')
         for obj in targets:
             obj.select_set(True)
@@ -271,7 +286,11 @@ class MASTEREXPORT_OT_FixTransforms(Operator):
             bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
 
         bpy.ops.object.select_all(action='DESELECT')
+        if prev_active:
+            prev_active.select_set(True)
+            context.view_layer.objects.active = prev_active
 
+        run_auto_check(context)
         self.report({'INFO'}, f"Applied transforms on {len(targets)} mesh(es)")
         return {'FINISHED'}
 
@@ -282,11 +301,17 @@ class MASTEREXPORT_OT_FixAll(Operator):
     bl_description = "Fix all detected issues at once"
     bl_options = {'REGISTER', 'UNDO'}
 
+    @classmethod
+    def poll(cls, context):
+        active = context.active_object
+        if active and active.type == 'EMPTY' and active.name.startswith("SM_"):
+            return True
+        return False
+
     def execute(self, context):
         bpy.ops.master_export.fix_doubles()
         bpy.ops.master_export.fix_normals()
         bpy.ops.master_export.fix_transforms()
-        bpy.ops.master_export.run_check()
 
-        self.report({'INFO'}, "All fixes applied and re-checked")
+        self.report({'INFO'}, "All fixes applied")
         return {'FINISHED'}

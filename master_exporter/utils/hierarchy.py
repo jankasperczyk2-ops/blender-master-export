@@ -8,6 +8,13 @@ from .naming import (
     get_colliders_collection_name,
 )
 
+MASTER_COLLECTION_NAME = "MasterExport"
+
+COL_COLOR_MASTER = (0.15, 0.75, 0.15)
+COL_COLOR_PARENT = (0.3, 0.5, 1.0)
+COL_COLOR_GEOMETRY = (1.0, 0.75, 0.2)
+COL_COLOR_COLLIDERS = (1.0, 0.3, 0.3)
+
 
 def find_or_create_collection(parent_collection, name):
     for child in parent_collection.children:
@@ -18,21 +25,31 @@ def find_or_create_collection(parent_collection, name):
     return new_col
 
 
-MASTER_COLLECTION_NAME = "MasterExport"
+def _set_collection_color(collection, color_tag):
+    collection.color_tag = color_tag
 
 
 def get_or_create_master_collection(context):
     scene_col = context.scene.collection
-    return find_or_create_collection(scene_col, MASTER_COLLECTION_NAME)
+    master_col = find_or_create_collection(scene_col, MASTER_COLLECTION_NAME)
+    _set_collection_color(master_col, 'COLOR_04')
+    return master_col
 
 
 def setup_asset_hierarchy(context, asset_name):
     master_col = get_or_create_master_collection(context)
 
     asset_col = find_or_create_collection(master_col, get_collection_name(asset_name))
+    _set_collection_color(asset_col, 'COLOR_04')
+
     parent_col = find_or_create_collection(asset_col, get_parent_collection_name(asset_name))
+    _set_collection_color(parent_col, 'COLOR_05')
+
     geo_col = find_or_create_collection(asset_col, get_geometry_collection_name(asset_name))
+    _set_collection_color(geo_col, 'COLOR_06')
+
     collider_col = find_or_create_collection(asset_col, get_colliders_collection_name(asset_name))
+    _set_collection_color(collider_col, 'COLOR_01')
 
     root_empty_name = get_root_empty_name(asset_name)
     root_empty = bpy.data.objects.get(root_empty_name)
@@ -88,3 +105,35 @@ def select_hierarchy(root_empty):
     for child in root_empty.children_recursive:
         child.select_set(True)
     bpy.context.view_layer.objects.active = root_empty
+
+
+def find_asset_from_empty(obj):
+    if obj is None or obj.type != 'EMPTY':
+        return None
+    if not obj.name.startswith("SM_"):
+        return None
+    asset_name = obj.name[3:]
+    master_col = bpy.data.collections.get(MASTER_COLLECTION_NAME)
+    if master_col is None:
+        return None
+    asset_col = None
+    for child in master_col.children:
+        if child.name == asset_name:
+            asset_col = child
+            break
+    if asset_col is None:
+        return None
+    geo_col = None
+    collider_col = None
+    for child in asset_col.children:
+        if child.name == "Geometry":
+            geo_col = child
+        elif child.name == "Colliders":
+            collider_col = child
+    return {
+        'asset_name': asset_name,
+        'asset_col': asset_col,
+        'geo_col': geo_col,
+        'collider_col': collider_col,
+        'root_empty': obj,
+    }

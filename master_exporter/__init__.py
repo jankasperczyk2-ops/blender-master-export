@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Master Export",
     "author": "Master Exporter Team",
-    "version": (1, 1, 0),
+    "version": (1, 2, 0),
     "blender": (4, 0, 0),
     "location": "View3D > Sidebar > Master Export",
     "description": "Professional asset export management for Unreal Engine and Unity",
@@ -24,7 +24,6 @@ from .operators.set_export import MASTEREXPORT_OT_SetExport
 from .operators.generate_colliders import MASTEREXPORT_OT_GenerateColliders
 from .operators.export_asset import MASTEREXPORT_OT_ExportAsset
 from .operators.pre_export_check import (
-    MASTEREXPORT_OT_RunCheck,
     MASTEREXPORT_OT_FixDoubles,
     MASTEREXPORT_OT_FixNormals,
     MASTEREXPORT_OT_FixTransforms,
@@ -67,12 +66,10 @@ class MasterExportProperties(PropertyGroup):
         name="Collision Mode",
         description="Collision generation method",
         items=[
-            ('SIMPLE', "Simple Bounding Box", "Single oriented bounding box"),
-            ('MULTI', "Multi Box", "Multiple oriented boxes per loose part"),
-            ('CONVEX', "Convex Lite", "Decimated convex decomposition"),
             ('SMART', "Smart Collider", "Voxel remesh + convex hull decomposition"),
+            ('SIMPLE', "Simple Bounding Box", "Single oriented bounding box"),
         ],
-        default='SIMPLE',
+        default='SMART',
     )
 
     unreal_collision_prefix: EnumProperty(
@@ -81,8 +78,6 @@ class MasterExportProperties(PropertyGroup):
         items=[
             ('UCX', "UCX (Convex)", "Convex collision"),
             ('UBX', "UBX (Box)", "Box collision"),
-            ('USP', "USP (Sphere)", "Sphere collision"),
-            ('UCP', "UCP (Capsule)", "Capsule collision"),
         ],
         default='UCX',
     )
@@ -110,11 +105,6 @@ class MasterExportProperties(PropertyGroup):
         default="AssetName_01",
     )
 
-    check_performed: BoolProperty(
-        name="Check Performed",
-        default=False,
-    )
-
     check_results: CollectionProperty(type=MeshCheckResult)
 
     check_has_colliders: BoolProperty(
@@ -139,7 +129,6 @@ classes = (
     MASTEREXPORT_OT_SetExport,
     MASTEREXPORT_OT_GenerateColliders,
     MASTEREXPORT_OT_ExportAsset,
-    MASTEREXPORT_OT_RunCheck,
     MASTEREXPORT_OT_FixDoubles,
     MASTEREXPORT_OT_FixNormals,
     MASTEREXPORT_OT_FixTransforms,

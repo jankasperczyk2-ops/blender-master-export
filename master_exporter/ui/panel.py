@@ -1,6 +1,9 @@
 import bpy
 from bpy.types import Panel
 
+from ..utils.hierarchy import find_asset_from_empty
+from ..operators.pre_export_check import run_auto_check
+
 
 class MASTEREXPORT_PT_MainPanel(Panel):
     bl_label = "Master Export"
@@ -30,7 +33,6 @@ class MASTEREXPORT_PT_SetExportPanel(Panel):
     bl_region_type = 'UI'
     bl_category = "Master Export"
     bl_parent_id = "MASTEREXPORT_PT_MainPanel"
-    bl_options = {'DEFAULT_CLOSED'}
 
     def draw(self, context):
         layout = self.layout
@@ -49,7 +51,6 @@ class MASTEREXPORT_PT_ColliderPanel(Panel):
     bl_region_type = 'UI'
     bl_category = "Master Export"
     bl_parent_id = "MASTEREXPORT_PT_MainPanel"
-    bl_options = {'DEFAULT_CLOSED'}
 
     def draw(self, context):
         layout = self.layout
@@ -73,8 +74,6 @@ class MASTEREXPORT_PT_ColliderPanel(Panel):
 
         mode_descriptions = {
             'SIMPLE': "One tight-fitting oriented box around all geometry",
-            'MULTI': "Multiple oriented boxes per loose part",
-            'CONVEX': "Decimated mesh separated into convex pieces",
             'SMART': "Voxel remesh + convex hull for precise collision",
         }
         desc_box = box.box()
@@ -93,30 +92,43 @@ class MASTEREXPORT_PT_ExportCheckPanel(Panel):
     bl_region_type = 'UI'
     bl_category = "Master Export"
     bl_parent_id = "MASTEREXPORT_PT_MainPanel"
-    bl_options = {'DEFAULT_CLOSED'}
 
     def draw(self, context):
         layout = self.layout
         props = context.scene.master_export
 
-        row = layout.row()
-        row.scale_y = 1.3
-        row.operator("master_export.run_check", icon='VIEWZOOM', text="Run Export Check")
+        active = context.active_object
+        asset_info = find_asset_from_empty(active)
+        has_empty_selected = asset_info is not None
 
-        if not props.check_performed:
+        if has_empty_selected:
+            run_auto_check(context)
+
+        if not has_empty_selected:
             info_box = layout.box()
-            info_box.label(text="Run check to see results", icon='INFO')
+            info_box.label(text="Select a root Empty (SM_...) to see stats", icon='INFO')
+
+            fix_box = layout.box()
+            fix_box.label(text="Fix Tools", icon='TOOL_SETTINGS')
+            col = fix_box.column(align=True)
+            col.enabled = False
+            col.operator("master_export.fix_doubles", icon='VERTEXSEL')
+            col.operator("master_export.fix_normals", icon='NORMALS_FACE')
+            col.operator("master_export.fix_transforms", icon='OBJECT_ORIGIN')
+            col.separator()
+            col.operator("master_export.fix_all", icon='FILE_REFRESH')
             return
 
         summary = layout.box()
         summary_row = summary.row()
-        summary_row.label(text="Summary", icon='OUTLINER_DATA_MESH')
+        summary_row.label(text=f"Asset: {asset_info['asset_name']}", icon='OUTLINER_DATA_MESH')
 
         col = summary.column(align=True)
         col.label(text=f"Total Triangles: {props.check_total_tris:,}", icon='MESH_DATA')
 
         if props.check_issues_found == 0:
-            col.label(text="No issues found", icon='CHECKMARK')
+            row = col.row()
+            row.label(text="All clean - ready to export", icon='CHECKMARK')
         else:
             row = col.row()
             row.alert = True
@@ -181,7 +193,7 @@ class MASTEREXPORT_PT_ExportCheckPanel(Panel):
             row = layout.row()
             row.scale_y = 1.3
             row.alert = True
-            row.operator("master_export.fix_all", icon='TOOL_SETTINGS', text="Fix All Issues")
+            row.operator("master_export.fix_all", icon='FILE_REFRESH', text="Fix All Issues")
 
 
 class MASTEREXPORT_PT_ExportPanel(Panel):
@@ -191,7 +203,6 @@ class MASTEREXPORT_PT_ExportPanel(Panel):
     bl_region_type = 'UI'
     bl_category = "Master Export"
     bl_parent_id = "MASTEREXPORT_PT_MainPanel"
-    bl_options = {'DEFAULT_CLOSED'}
 
     def draw(self, context):
         layout = self.layout

@@ -4,8 +4,6 @@ from bpy.types import Operator
 from ..utils.hierarchy import get_geometry_objects, get_root_empty_for_asset
 from ..utils.collision import (
     generate_simple_bounding_box,
-    generate_multi_box,
-    generate_convex_lite,
     generate_smart_collider,
 )
 from ..utils.naming import get_collection_name
@@ -60,14 +58,6 @@ class MASTEREXPORT_OT_GenerateColliders(Operator):
 
         if collision_mode == 'SIMPLE':
             colliders = generate_simple_bounding_box(
-                context, geo_objects, asset_name, export_target, collider_col, root_empty
-            )
-        elif collision_mode == 'MULTI':
-            colliders = generate_multi_box(
-                context, geo_objects, asset_name, export_target, collider_col, root_empty
-            )
-        elif collision_mode == 'CONVEX':
-            colliders = generate_convex_lite(
                 context, geo_objects, asset_name, export_target, collider_col, root_empty
             )
         elif collision_mode == 'SMART':

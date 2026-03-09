@@ -179,16 +179,19 @@ def _setup_collider_material():
     mat = bpy.data.materials.get(mat_name)
     if mat is None:
         mat = bpy.data.materials.new(mat_name)
-        mat.diffuse_color = COLLIDER_COLOR
-        mat.roughness = 1.0
+    mat.diffuse_color = COLLIDER_COLOR
+    mat.roughness = 1.0
+    mat.use_nodes = False
     return mat
 
 
 def _link_collider(col_obj, collider_col, root_empty):
     collider_col.objects.link(col_obj)
+
     col_obj.display_type = 'WIRE'
     col_obj.color = COLLIDER_COLOR
     col_obj.show_wire = True
+    col_obj.show_in_front = True
 
     mat = _setup_collider_material()
     col_obj.data.materials.clear()
@@ -227,47 +230,6 @@ def _remove_temp_object(obj):
         bpy.data.meshes.remove(mesh_data)
 
 
-def _split_verts_along_axis(verts, axis, split_point):
-    group_a = []
-    group_b = []
-    for v in verts:
-        if v.dot(axis) < split_point:
-            group_a.append(v)
-        else:
-            group_b.append(v)
-    return group_a, group_b
-
-
-def _recursive_obb_split(verts, max_depth, current_depth=0):
-    if len(verts) < 4 or current_depth >= max_depth:
-        return [verts]
-
-    obb = _compute_obb(verts)
-    if obb is None:
-        return [verts]
-
-    he = obb['half_extents']
-    longest_idx = 0
-    if he.y > he.x:
-        longest_idx = 1
-    if he.z > he[longest_idx]:
-        longest_idx = 2
-
-    split_axis = obb['axes'][longest_idx]
-    split_point = obb['center'].dot(split_axis)
-
-    group_a, group_b = _split_verts_along_axis(verts, split_axis, split_point)
-
-    if len(group_a) < 3 or len(group_b) < 3:
-        return [verts]
-
-    results = []
-    results.extend(_recursive_obb_split(group_a, max_depth, current_depth + 1))
-    results.extend(_recursive_obb_split(group_b, max_depth, current_depth + 1))
-
-    return results
-
-
 def generate_simple_bounding_box(context, geo_objects, asset_name, export_target, collider_col, root_empty):
     clear_colliders(collider_col)
 
@@ -285,128 +247,6 @@ def generate_simple_bounding_box(context, geo_objects, asset_name, export_target
     _link_collider(col_obj, collider_col, root_empty)
 
     return [col_obj]
-
-
-def generate_multi_box(context, geo_objects, asset_name, export_target, collider_col, root_empty):
-    clear_colliders(collider_col)
-
-    merged = _merge_geometry_copies(context, geo_objects)
-    if merged is None:
-        return []
-
-    all_verts = _get_world_verts(merged)
-
-    bpy.ops.object.select_all(action='DESELECT')
-    merged.select_set(True)
-    context.view_layer.objects.active = merged
-
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.separate(type='LOOSE')
-    bpy.ops.object.mode_set(mode='OBJECT')
-
-    parts = [obj for obj in context.selected_objects if obj.type == 'MESH']
-    if not parts:
-        parts = [merged]
-
-    vert_groups = []
-    for part in parts:
-        part_verts = _get_world_verts(part)
-        if len(part_verts) >= 3:
-            vert_groups.append(part_verts)
-
-    for part in parts:
-        _remove_temp_object(part)
-
-    if not vert_groups:
-        vert_groups = _recursive_obb_split(all_verts, max_depth=2)
-
-    final_groups = []
-    for group in vert_groups:
-        obb = _compute_obb(group)
-        if obb is None:
-            continue
-        he = obb['half_extents']
-        longest = max(he.x, he.y, he.z)
-        shortest = min(he.x, he.y, he.z)
-        if shortest > 0.001 and longest / shortest > 3.0 and len(group) >= 8:
-            sub_groups = _recursive_obb_split(group, max_depth=1)
-            final_groups.extend(sub_groups)
-        else:
-            final_groups.append(group)
-
-    if len(final_groups) > 8:
-        final_groups.sort(key=lambda g: len(g), reverse=True)
-        final_groups = final_groups[:8]
-
-    prefix = 'UBX' if export_target == 'UNREAL' else 'COL'
-    colliders = []
-    for i, group in enumerate(final_groups):
-        obb = _compute_obb(group)
-        if obb is None:
-            continue
-
-        col_name = get_collision_name(asset_name, i + 1, export_target, prefix)
-        col_obj = _create_obb_mesh(col_name, obb)
-        _link_collider(col_obj, collider_col, root_empty)
-        colliders.append(col_obj)
-
-    return colliders
-
-
-def generate_convex_lite(context, geo_objects, asset_name, export_target, collider_col, root_empty):
-    clear_colliders(collider_col)
-
-    if not geo_objects:
-        return []
-
-    merged = _merge_geometry_copies(context, geo_objects)
-    if merged is None:
-        return []
-
-    decimate = merged.modifiers.new(name="Decimate", type='DECIMATE')
-    decimate.ratio = 0.15
-
-    bpy.ops.object.select_all(action='DESELECT')
-    merged.select_set(True)
-    context.view_layer.objects.active = merged
-    bpy.ops.object.modifier_apply(modifier=decimate.name)
-
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.separate(type='LOOSE')
-    bpy.ops.object.mode_set(mode='OBJECT')
-
-    parts = list(context.selected_objects)
-    if not parts:
-        parts = [merged]
-
-    prefix = 'UCX' if export_target == 'UNREAL' else 'COL'
-    colliders = []
-    idx = 1
-    for part in parts:
-        if part.type != 'MESH':
-            _remove_temp_object(part)
-            continue
-
-        verts = _get_world_verts(part)
-
-        for col in list(part.users_collection):
-            col.objects.unlink(part)
-        _remove_temp_object(part)
-
-        if len(verts) < 3:
-            continue
-
-        obb = _compute_obb(verts)
-        if obb is None:
-            continue
-
-        col_name = get_collision_name(asset_name, idx, export_target, prefix)
-        col_obj = _create_obb_mesh(col_name, obb)
-        _link_collider(col_obj, collider_col, root_empty)
-        colliders.append(col_obj)
-        idx += 1
-
-    return colliders
 
 
 def generate_smart_collider(context, geo_objects, asset_name, export_target,
@@ -428,6 +268,11 @@ def generate_smart_collider(context, geo_objects, asset_name, export_target,
     remesh_mod.mode = 'VOXEL'
     remesh_mod.voxel_size = voxel_size
     bpy.ops.object.modifier_apply(modifier=remesh_mod.name)
+
+    decimate_mod = merged.modifiers.new(name="Decimate", type='DECIMATE')
+    decimate_mod.type = 'DISSOLVE'
+    decimate_mod.angle_limit = 0.0872665
+    bpy.ops.object.modifier_apply(modifier=decimate_mod.name)
 
     bpy.ops.object.mode_set(mode='EDIT')
     bpy.ops.mesh.separate(type='LOOSE')
