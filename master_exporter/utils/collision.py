@@ -269,11 +269,6 @@ def generate_smart_collider(context, geo_objects, asset_name, export_target,
     remesh_mod.voxel_size = voxel_size
     bpy.ops.object.modifier_apply(modifier=remesh_mod.name)
 
-    decimate_mod = merged.modifiers.new(name="Decimate", type='DECIMATE')
-    decimate_mod.type = 'DISSOLVE'
-    decimate_mod.angle_limit = 0.0872665
-    bpy.ops.object.modifier_apply(modifier=decimate_mod.name)
-
     bpy.ops.object.mode_set(mode='EDIT')
     bpy.ops.mesh.separate(type='LOOSE')
     bpy.ops.object.mode_set(mode='OBJECT')
