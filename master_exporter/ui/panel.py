@@ -2,7 +2,6 @@ import bpy
 from bpy.types import Panel
 
 from ..utils.hierarchy import find_asset_from_object
-from ..operators.pre_export_check import run_auto_check
 
 
 class MASTEREXPORT_PT_MainPanel(Panel):
@@ -99,14 +98,11 @@ class MASTEREXPORT_PT_ExportCheckPanel(Panel):
 
         active = context.active_object
         asset_info = find_asset_from_object(active)
-        has_empty_selected = asset_info is not None
+        has_asset = asset_info is not None
 
-        if has_empty_selected:
-            run_auto_check(context)
-
-        if not has_empty_selected:
+        if not has_asset:
             info_box = layout.box()
-            info_box.label(text="Select a root Empty (SM_...) to see stats", icon='INFO')
+            info_box.label(text="Select an asset object to see stats", icon='INFO')
 
             fix_box = layout.box()
             fix_box.label(text="Fix Tools", icon='TOOL_SETTINGS')
@@ -119,9 +115,14 @@ class MASTEREXPORT_PT_ExportCheckPanel(Panel):
             col.operator("master_export.fix_all", icon='FILE_REFRESH')
             return
 
+        if props.check_asset_name == "":
+            info_box = layout.box()
+            info_box.label(text="Checking...", icon='INFO')
+            return
+
         summary = layout.box()
         summary_row = summary.row()
-        summary_row.label(text=f"Asset: {asset_info['asset_name']}", icon='OUTLINER_DATA_MESH')
+        summary_row.label(text=f"Asset: {props.check_asset_name}", icon='OUTLINER_DATA_MESH')
 
         col = summary.column(align=True)
         col.label(text=f"Total Triangles: {props.check_total_tris:,}", icon='MESH_DATA')

@@ -103,11 +103,14 @@ def run_auto_check(context):
     props.check_total_tris = 0
     props.check_issues_found = 0
     props.check_has_colliders = False
+    props.check_asset_name = ""
 
     active = context.active_object
     asset_info = find_asset_from_object(active)
     if asset_info is None:
         return
+
+    props.check_asset_name = asset_info['asset_name']
 
     geo_col = asset_info.get('geo_col')
     collider_col = asset_info.get('collider_col')

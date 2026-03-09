@@ -249,12 +249,34 @@ def generate_simple_bounding_box(context, geo_objects, asset_name, export_target
     return [col_obj]
 
 
+def _compute_merge_distance(geo_objects):
+    all_verts = _get_all_world_verts(geo_objects)
+    if not all_verts:
+        return 0.1
+
+    min_co = Vector((float('inf'), float('inf'), float('inf')))
+    max_co = Vector((float('-inf'), float('-inf'), float('-inf')))
+    for v in all_verts:
+        for i in range(3):
+            if v[i] < min_co[i]:
+                min_co[i] = v[i]
+            if v[i] > max_co[i]:
+                max_co[i] = v[i]
+
+    dims = max_co - min_co
+    max_dim = max(dims.x, dims.y, dims.z)
+    merge_dist = max_dim * 0.05
+    return max(merge_dist, 0.001)
+
+
 def generate_smart_collider(context, geo_objects, asset_name, export_target,
                             collider_col, root_empty, voxel_size=0.1):
     clear_colliders(collider_col)
 
     if not geo_objects:
         return []
+
+    merge_dist = _compute_merge_distance(geo_objects)
 
     merged = _merge_geometry_copies(context, geo_objects)
     if merged is None:
@@ -268,6 +290,13 @@ def generate_smart_collider(context, geo_objects, asset_name, export_target,
     remesh_mod.mode = 'VOXEL'
     remesh_mod.voxel_size = voxel_size
     bpy.ops.object.modifier_apply(modifier=remesh_mod.name)
+
+    bm = bmesh.new()
+    bm.from_mesh(merged.data)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=merge_dist)
+    bm.to_mesh(merged.data)
+    bm.free()
+    merged.data.update()
 
     bpy.ops.object.mode_set(mode='EDIT')
     bpy.ops.mesh.separate(type='LOOSE')

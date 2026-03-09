@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Master Export",
     "author": "Master Exporter Team",
-    "version": (1, 2, 0),
+    "version": (1, 3, 0),
     "blender": (4, 0, 0),
     "location": "View3D > Sidebar > Master Export",
     "description": "Professional asset export management for Unreal Engine and Unity",
@@ -28,6 +28,7 @@ from .operators.pre_export_check import (
     MASTEREXPORT_OT_FixNormals,
     MASTEREXPORT_OT_FixTransforms,
     MASTEREXPORT_OT_FixAll,
+    run_auto_check,
 )
 from .ui.panel import (
     MASTEREXPORT_PT_MainPanel,
@@ -36,6 +37,7 @@ from .ui.panel import (
     MASTEREXPORT_PT_ExportCheckPanel,
     MASTEREXPORT_PT_ExportPanel,
 )
+from .utils.hierarchy import find_asset_from_object
 
 
 class MeshCheckResult(PropertyGroup):
@@ -107,6 +109,11 @@ class MasterExportProperties(PropertyGroup):
 
     check_results: CollectionProperty(type=MeshCheckResult)
 
+    check_asset_name: StringProperty(
+        name="Check Asset Name",
+        default="",
+    )
+
     check_has_colliders: BoolProperty(
         name="Has Colliders",
         default=False,
@@ -121,6 +128,34 @@ class MasterExportProperties(PropertyGroup):
         name="Issues Found",
         default=0,
     )
+
+
+_last_active_object_name = ""
+
+
+def _on_depsgraph_update(scene, depsgraph):
+    global _last_active_object_name
+
+    active = bpy.context.view_layer.objects.active
+    current_name = active.name if active else ""
+
+    if current_name == _last_active_object_name:
+        return
+
+    _last_active_object_name = current_name
+
+    asset_info = find_asset_from_object(active)
+    props = scene.master_export
+
+    if asset_info is None:
+        props.check_results.clear()
+        props.check_asset_name = ""
+        props.check_total_tris = 0
+        props.check_issues_found = 0
+        props.check_has_colliders = False
+        return
+
+    run_auto_check(bpy.context)
 
 
 classes = (
@@ -145,9 +180,12 @@ def register():
     for cls in classes:
         bpy.utils.register_class(cls)
     bpy.types.Scene.master_export = PointerProperty(type=MasterExportProperties)
+    bpy.app.handlers.depsgraph_update_post.append(_on_depsgraph_update)
 
 
 def unregister():
+    if _on_depsgraph_update in bpy.app.handlers.depsgraph_update_post:
+        bpy.app.handlers.depsgraph_update_post.remove(_on_depsgraph_update)
     del bpy.types.Scene.master_export
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
