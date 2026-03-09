@@ -20,7 +20,7 @@ class MASTEREXPORT_PT_MainPanel(Panel):
 
         col = header.column(align=True)
         col.prop(props, "asset_name", icon='OBJECT_DATA')
-        col.prop(props, "export_target", icon='GAME')
+        col.prop(props, "export_target", icon='SCENE')
 
 
 class MASTEREXPORT_PT_SetExportPanel(Panel):
@@ -63,7 +63,7 @@ class MASTEREXPORT_PT_ColliderPanel(Panel):
 
         if props.export_target == 'UNREAL':
             col.separator()
-            col.label(text="Unreal Prefix:", icon='MODIFIER')
+            col.label(text="Unreal Prefix:", icon='MOD_BUILD')
             col.prop(props, "unreal_collision_prefix", text="")
 
         if props.collision_mode == 'SMART':
@@ -79,7 +79,7 @@ class MASTEREXPORT_PT_ColliderPanel(Panel):
         }
         desc_box = box.box()
         desc_box.scale_y = 0.7
-        desc_box.label(text=mode_descriptions.get(props.collision_mode, ""), icon='QUESTION')
+        desc_box.label(text=mode_descriptions.get(props.collision_mode, ""), icon='INFO')
 
         row = layout.row()
         row.scale_y = 1.4
@@ -202,8 +202,7 @@ class MASTEREXPORT_PT_ExportPanel(Panel):
         col.label(text="Export Path:", icon='FILE_FOLDER')
         col.prop(props, "export_path", text="")
 
-        target_icon = 'GHOST_ENABLED' if props.export_target == 'UNREAL' else 'GHOST_DISABLED'
-        col.label(text=f"Target: {props.export_target.title()}", icon=target_icon)
+        col.label(text=f"Target: {props.export_target.title()}", icon='SCENE')
 
         layout.separator()
         row = layout.row()
