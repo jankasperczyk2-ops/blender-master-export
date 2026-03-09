@@ -107,12 +107,17 @@ def select_hierarchy(root_empty):
     bpy.context.view_layer.objects.active = root_empty
 
 
-def find_asset_from_empty(obj):
-    if obj is None or obj.type != 'EMPTY':
+def find_asset_from_object(obj):
+    if obj is None:
         return None
-    if not obj.name.startswith("SM_"):
+    root = obj
+    while root is not None:
+        if root.type == 'EMPTY' and root.name.startswith("SM_"):
+            break
+        root = root.parent
+    if root is None:
         return None
-    asset_name = obj.name[3:]
+    asset_name = root.name[3:]
     master_col = bpy.data.collections.get(MASTER_COLLECTION_NAME)
     if master_col is None:
         return None
@@ -135,5 +140,5 @@ def find_asset_from_empty(obj):
         'asset_col': asset_col,
         'geo_col': geo_col,
         'collider_col': collider_col,
-        'root_empty': obj,
+        'root_empty': root,
     }

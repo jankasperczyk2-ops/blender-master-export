@@ -3,7 +3,7 @@ import bmesh
 from bpy.types import Operator
 from mathutils import Vector
 
-from ..utils.hierarchy import MASTER_COLLECTION_NAME, find_asset_from_empty
+from ..utils.hierarchy import MASTER_COLLECTION_NAME, find_asset_from_object
 
 
 def _get_master_collection():
@@ -105,7 +105,7 @@ def run_auto_check(context):
     props.check_has_colliders = False
 
     active = context.active_object
-    asset_info = find_asset_from_empty(active)
+    asset_info = find_asset_from_object(active)
     if asset_info is None:
         return
 
@@ -163,7 +163,7 @@ def run_auto_check(context):
 
 def _get_geometry_targets(context, obj_name=""):
     active = context.active_object
-    asset_info = find_asset_from_empty(active)
+    asset_info = find_asset_from_object(active)
 
     if asset_info is None:
         master_col = _get_master_collection()
@@ -183,6 +183,11 @@ def _get_geometry_targets(context, obj_name=""):
     return targets
 
 
+def _poll_asset_selected(context):
+    active = context.active_object
+    return find_asset_from_object(active) is not None
+
+
 class MASTEREXPORT_OT_FixDoubles(Operator):
     bl_idname = "master_export.fix_doubles"
     bl_label = "Fix Double Vertices"
@@ -193,10 +198,7 @@ class MASTEREXPORT_OT_FixDoubles(Operator):
 
     @classmethod
     def poll(cls, context):
-        active = context.active_object
-        if active and active.type == 'EMPTY' and active.name.startswith("SM_"):
-            return True
-        return False
+        return _poll_asset_selected(context)
 
     def execute(self, context):
         targets = _get_geometry_targets(context, self.obj_name)
@@ -229,10 +231,7 @@ class MASTEREXPORT_OT_FixNormals(Operator):
 
     @classmethod
     def poll(cls, context):
-        active = context.active_object
-        if active and active.type == 'EMPTY' and active.name.startswith("SM_"):
-            return True
-        return False
+        return _poll_asset_selected(context)
 
     def execute(self, context):
         targets = _get_geometry_targets(context, self.obj_name)
@@ -265,10 +264,7 @@ class MASTEREXPORT_OT_FixTransforms(Operator):
 
     @classmethod
     def poll(cls, context):
-        active = context.active_object
-        if active and active.type == 'EMPTY' and active.name.startswith("SM_"):
-            return True
-        return False
+        return _poll_asset_selected(context)
 
     def execute(self, context):
         targets = _get_geometry_targets(context, self.obj_name)
@@ -303,10 +299,7 @@ class MASTEREXPORT_OT_FixAll(Operator):
 
     @classmethod
     def poll(cls, context):
-        active = context.active_object
-        if active and active.type == 'EMPTY' and active.name.startswith("SM_"):
-            return True
-        return False
+        return _poll_asset_selected(context)
 
     def execute(self, context):
         bpy.ops.master_export.fix_doubles()

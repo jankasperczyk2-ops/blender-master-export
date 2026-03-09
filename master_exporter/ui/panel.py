@@ -1,7 +1,7 @@
 import bpy
 from bpy.types import Panel
 
-from ..utils.hierarchy import find_asset_from_empty
+from ..utils.hierarchy import find_asset_from_object
 from ..operators.pre_export_check import run_auto_check
 
 
@@ -98,7 +98,7 @@ class MASTEREXPORT_PT_ExportCheckPanel(Panel):
         props = context.scene.master_export
 
         active = context.active_object
-        asset_info = find_asset_from_empty(active)
+        asset_info = find_asset_from_object(active)
         has_empty_selected = asset_info is not None
 
         if has_empty_selected:
