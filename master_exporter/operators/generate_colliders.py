@@ -6,8 +6,9 @@ from ..utils.collision import (
     generate_simple_bounding_box,
     generate_multi_box,
     generate_convex_lite,
+    generate_smart_collider,
 )
-from ..utils.naming import get_colliders_collection_name, get_collection_name
+from ..utils.naming import get_collection_name
 
 
 class MASTEREXPORT_OT_GenerateColliders(Operator):
@@ -28,7 +29,6 @@ class MASTEREXPORT_OT_GenerateColliders(Operator):
         asset_name = props.asset_name
         export_target = props.export_target
         collision_mode = props.collision_mode
-        collision_prefix = props.unreal_collision_prefix if export_target == 'UNREAL' else 'COL'
 
         root_empty = get_root_empty_for_asset(asset_name)
         if root_empty is None:
@@ -69,6 +69,11 @@ class MASTEREXPORT_OT_GenerateColliders(Operator):
         elif collision_mode == 'CONVEX':
             colliders = generate_convex_lite(
                 context, geo_objects, asset_name, export_target, collider_col, root_empty
+            )
+        elif collision_mode == 'SMART':
+            colliders = generate_smart_collider(
+                context, geo_objects, asset_name, export_target,
+                collider_col, root_empty, voxel_size=props.smart_voxel_size
             )
         else:
             self.report({'ERROR'}, f"Unknown collision mode: {collision_mode}")

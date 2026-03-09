@@ -1,9 +1,11 @@
 import bpy
 import bmesh
 from mathutils import Vector, Matrix
-from math import sqrt, atan2, cos, sin, pi
+from math import atan2, cos, sin
 
 from .naming import get_collision_name
+
+COLLIDER_COLOR = (0.0, 1.0, 0.0, 1.0)
 
 
 def _get_world_verts(obj):
@@ -23,7 +25,7 @@ def _get_all_world_verts(objects):
 def _compute_covariance(verts):
     n = len(verts)
     if n == 0:
-        return Vector((0, 0, 0)), Matrix.Identity(3)
+        return Vector((0, 0, 0)), [[0.0] * 3 for _ in range(3)]
 
     mean = Vector((0, 0, 0))
     for v in verts:
@@ -172,9 +174,26 @@ def _create_obb_mesh(name, obb):
     return obj
 
 
+def _setup_collider_material():
+    mat_name = "MasterExport_Collider"
+    mat = bpy.data.materials.get(mat_name)
+    if mat is None:
+        mat = bpy.data.materials.new(mat_name)
+        mat.diffuse_color = COLLIDER_COLOR
+        mat.roughness = 1.0
+    return mat
+
+
 def _link_collider(col_obj, collider_col, root_empty):
     collider_col.objects.link(col_obj)
     col_obj.display_type = 'WIRE'
+    col_obj.color = COLLIDER_COLOR
+    col_obj.show_wire = True
+
+    mat = _setup_collider_material()
+    col_obj.data.materials.clear()
+    col_obj.data.materials.append(mat)
+
     col_obj.parent = root_empty
     col_obj.matrix_parent_inverse = root_empty.matrix_world.inverted()
 
@@ -386,6 +405,68 @@ def generate_convex_lite(context, geo_objects, asset_name, export_target, collid
         _link_collider(col_obj, collider_col, root_empty)
         colliders.append(col_obj)
         idx += 1
+
+    return colliders
+
+
+def generate_smart_collider(context, geo_objects, asset_name, export_target,
+                            collider_col, root_empty, voxel_size=0.1):
+    clear_colliders(collider_col)
+
+    if not geo_objects:
+        return []
+
+    merged = _merge_geometry_copies(context, geo_objects)
+    if merged is None:
+        return []
+
+    bpy.ops.object.select_all(action='DESELECT')
+    merged.select_set(True)
+    context.view_layer.objects.active = merged
+
+    remesh_mod = merged.modifiers.new(name="VoxelRemesh", type='REMESH')
+    remesh_mod.mode = 'VOXEL'
+    remesh_mod.voxel_size = voxel_size
+    bpy.ops.object.modifier_apply(modifier=remesh_mod.name)
+
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.separate(type='LOOSE')
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+    parts = [obj for obj in context.selected_objects if obj.type == 'MESH']
+    if not parts:
+        parts = [merged]
+
+    convex_parts = []
+    for part in parts:
+        bpy.ops.object.select_all(action='DESELECT')
+        part.select_set(True)
+        context.view_layer.objects.active = part
+
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_all(action='SELECT')
+        bpy.ops.mesh.convex_hull()
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+        convex_parts.append(part)
+
+    prefix = 'UCX' if export_target == 'UNREAL' else 'COL'
+    colliders = []
+
+    for i, part in enumerate(convex_parts):
+        if part.type != 'MESH':
+            _remove_temp_object(part)
+            continue
+
+        col_name = get_collision_name(asset_name, i + 1, export_target, prefix)
+        part.name = col_name
+        part.data.name = col_name
+
+        for col in list(part.users_collection):
+            col.objects.unlink(part)
+
+        _link_collider(part, collider_col, root_empty)
+        colliders.append(part)
 
     return colliders
 
