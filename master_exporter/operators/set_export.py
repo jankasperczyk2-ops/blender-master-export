@@ -27,8 +27,14 @@ class MASTEREXPORT_OT_SetExport(Operator):
             self.report({'ERROR'}, "No meshes selected")
             return {'CANCELLED'}
 
+        from mathutils import Vector
+        center = Vector((0, 0, 0))
+        for obj in selected_meshes:
+            center += obj.matrix_world.translation
+        center /= len(selected_meshes)
+
         asset_col, parent_col, geo_col, collider_col, root_empty = setup_asset_hierarchy(
-            context, asset_name
+            context, asset_name, location=center
         )
 
         moved = move_selected_meshes_to_geometry(context, geo_col, root_empty)

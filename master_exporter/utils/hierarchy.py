@@ -36,7 +36,7 @@ def get_or_create_master_collection(context):
     return master_col
 
 
-def setup_asset_hierarchy(context, asset_name):
+def setup_asset_hierarchy(context, asset_name, location=None):
     master_col = get_or_create_master_collection(context)
 
     asset_col = find_or_create_collection(master_col, get_collection_name(asset_name))
@@ -57,6 +57,8 @@ def setup_asset_hierarchy(context, asset_name):
         root_empty = bpy.data.objects.new(root_empty_name, None)
         root_empty.empty_display_type = 'ARROWS'
         root_empty.empty_display_size = 0.5
+        if location is not None:
+            root_empty.location = location
 
     if root_empty.name not in parent_col.objects:
         parent_col.objects.link(root_empty)

@@ -1,5 +1,6 @@
 import bpy
 import os
+from mathutils import Vector
 
 
 def apply_transforms_on_children(root_empty):
@@ -25,9 +26,29 @@ def _select_hierarchy(root_empty):
     bpy.context.view_layer.objects.active = root_empty
 
 
+def _move_hierarchy_to_origin(root_empty):
+    offset = root_empty.location.copy()
+    root_empty.location = Vector((0, 0, 0))
+
+    for child in root_empty.children:
+        child.matrix_parent_inverse = root_empty.matrix_world.inverted()
+
+    return offset
+
+
+def _restore_hierarchy_position(root_empty, offset):
+    root_empty.location = offset
+
+    for child in root_empty.children:
+        child.matrix_parent_inverse = root_empty.matrix_world.inverted()
+
+
 def export_fbx_unreal(filepath, root_empty):
     _select_hierarchy(root_empty)
     apply_transforms_on_children(root_empty)
+
+    offset = _move_hierarchy_to_origin(root_empty)
+
     _select_hierarchy(root_empty)
 
     bpy.ops.export_scene.fbx(
@@ -43,10 +64,15 @@ def export_fbx_unreal(filepath, root_empty):
         use_mesh_modifiers=True,
     )
 
+    _restore_hierarchy_position(root_empty, offset)
+
 
 def export_fbx_unity(filepath, root_empty):
     _select_hierarchy(root_empty)
     apply_transforms_on_children(root_empty)
+
+    offset = _move_hierarchy_to_origin(root_empty)
+
     _select_hierarchy(root_empty)
 
     bpy.ops.export_scene.fbx(
@@ -59,6 +85,8 @@ def export_fbx_unity(filepath, root_empty):
         object_types={'EMPTY', 'MESH'},
         use_mesh_modifiers=True,
     )
+
+    _restore_hierarchy_position(root_empty, offset)
 
 
 def get_export_filepath(context, asset_name):
