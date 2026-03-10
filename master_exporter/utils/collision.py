@@ -1,7 +1,7 @@
 import bpy
 import bmesh
 from mathutils import Vector, Matrix
-from math import atan2, cos, sin
+from math import atan2, cos, sin, pi
 
 from .naming import get_collision_name
 
@@ -20,6 +20,18 @@ def _get_all_world_verts(objects):
         if obj.type == 'MESH':
             verts.extend(_get_world_verts(obj))
     return verts
+
+
+def _compute_bbox(verts):
+    min_co = Vector((float('inf'), float('inf'), float('inf')))
+    max_co = Vector((float('-inf'), float('-inf'), float('-inf')))
+    for v in verts:
+        for i in range(3):
+            if v[i] < min_co[i]:
+                min_co[i] = v[i]
+            if v[i] > max_co[i]:
+                max_co[i] = v[i]
+    return min_co, max_co
 
 
 def _compute_covariance(verts):
@@ -230,6 +242,149 @@ def _remove_temp_object(obj):
         bpy.data.meshes.remove(mesh_data)
 
 
+def _compute_mesh_volume(bm):
+    vol = 0.0
+    for face in bm.faces:
+        if len(face.verts) < 3:
+            continue
+        v0 = face.verts[0].co
+        for i in range(1, len(face.verts) - 1):
+            v1 = face.verts[i].co
+            v2 = face.verts[i + 1].co
+            vol += v0.dot(v1.cross(v2))
+    return abs(vol) / 6.0
+
+
+def _compute_convexity_ratio(obj):
+    bm_orig = bmesh.new()
+    bm_orig.from_mesh(obj.data)
+    bm_orig.transform(obj.matrix_world)
+
+    orig_vol = _compute_mesh_volume(bm_orig)
+
+    bm_hull = bmesh.new()
+    bm_hull.from_mesh(obj.data)
+    bm_hull.transform(obj.matrix_world)
+
+    hull_result = bmesh.ops.convex_hull(bm_hull, input=bm_hull.verts)
+    unused_geom = hull_result.get("geom_unused", []) + hull_result.get("geom_interior", [])
+    bmesh.ops.delete(bm_hull, geom=unused_geom, context='VERTS')
+
+    hull_vol = _compute_mesh_volume(bm_hull)
+
+    bm_orig.free()
+    bm_hull.free()
+
+    if hull_vol < 1e-8:
+        return 1.0
+
+    return min(orig_vol / hull_vol, 1.0) if orig_vol > 0 else 0.0
+
+
+def _compute_aspect_ratio(verts):
+    if len(verts) < 2:
+        return 1.0
+
+    min_co, max_co = _compute_bbox(verts)
+    dims = max_co - min_co
+    sorted_dims = sorted([dims.x, dims.y, dims.z], reverse=True)
+
+    if sorted_dims[2] < 1e-6:
+        return 10.0
+
+    return sorted_dims[0] / max(sorted_dims[2], 1e-6)
+
+
+def _analyze_mesh_shape(geo_objects):
+    all_verts = _get_all_world_verts(geo_objects)
+    if not all_verts:
+        return {
+            'convexity': 1.0,
+            'aspect_ratio': 1.0,
+            'max_dimension': 1.0,
+            'strategy': 'CONVEX_HULL',
+        }
+
+    min_co, max_co = _compute_bbox(all_verts)
+    dims = max_co - min_co
+    max_dim = max(dims.x, dims.y, dims.z)
+    aspect = _compute_aspect_ratio(all_verts)
+
+    avg_convexity = 0.0
+    count = 0
+    for obj in geo_objects:
+        if obj.type == 'MESH' and len(obj.data.vertices) >= 4:
+            ratio = _compute_convexity_ratio(obj)
+            avg_convexity += ratio
+            count += 1
+
+    if count > 0:
+        avg_convexity /= count
+    else:
+        avg_convexity = 0.5
+
+    if avg_convexity > 0.85:
+        strategy = 'CONVEX_HULL'
+    elif avg_convexity > 0.5 or aspect > 4.0:
+        strategy = 'MODERATE_DECOMPOSE'
+    else:
+        strategy = 'FINE_DECOMPOSE'
+
+    return {
+        'convexity': avg_convexity,
+        'aspect_ratio': aspect,
+        'max_dimension': max_dim,
+        'strategy': strategy,
+    }
+
+
+def _auto_voxel_size(analysis, user_voxel_size):
+    strategy = analysis['strategy']
+    max_dim = analysis['max_dimension']
+
+    if strategy == 'CONVEX_HULL':
+        return user_voxel_size
+
+    if strategy == 'MODERATE_DECOMPOSE':
+        return max(user_voxel_size, max_dim * 0.08)
+
+    return max(user_voxel_size * 0.7, max_dim * 0.04)
+
+
+def _filter_tiny_pieces(parts, analysis):
+    if len(parts) <= 1:
+        return parts
+
+    min_co, max_co = _compute_bbox(_get_all_world_verts_from_parts(parts))
+    total_dims = max_co - min_co
+    total_vol = total_dims.x * total_dims.y * total_dims.z
+
+    min_volume = total_vol * 0.005
+
+    kept = []
+    for part in parts:
+        bm = bmesh.new()
+        bm.from_mesh(part.data)
+        bm.transform(part.matrix_world)
+        vol = _compute_mesh_volume(bm)
+        bm.free()
+
+        if vol >= min_volume or len(kept) == 0:
+            kept.append(part)
+        else:
+            _remove_temp_object(part)
+
+    return kept
+
+
+def _get_all_world_verts_from_parts(parts):
+    verts = []
+    for obj in parts:
+        if obj.type == 'MESH':
+            verts.extend(_get_world_verts(obj))
+    return verts
+
+
 def generate_simple_bounding_box(context, geo_objects, asset_name, export_target, collider_col, root_empty):
     clear_colliders(collider_col)
 
@@ -249,34 +404,22 @@ def generate_simple_bounding_box(context, geo_objects, asset_name, export_target
     return [col_obj]
 
 
-def _compute_merge_distance(geo_objects):
-    all_verts = _get_all_world_verts(geo_objects)
-    if not all_verts:
-        return 0.1
-
-    min_co = Vector((float('inf'), float('inf'), float('inf')))
-    max_co = Vector((float('-inf'), float('-inf'), float('-inf')))
-    for v in all_verts:
-        for i in range(3):
-            if v[i] < min_co[i]:
-                min_co[i] = v[i]
-            if v[i] > max_co[i]:
-                max_co[i] = v[i]
-
-    dims = max_co - min_co
-    max_dim = max(dims.x, dims.y, dims.z)
-    merge_dist = max_dim * 0.05
-    return max(merge_dist, 0.001)
-
-
 def generate_smart_collider(context, geo_objects, asset_name, export_target,
-                            collider_col, root_empty, voxel_size=0.1):
+                            collider_col, root_empty, voxel_size=1.0):
     clear_colliders(collider_col)
 
     if not geo_objects:
         return []
 
-    merge_dist = _compute_merge_distance(geo_objects)
+    analysis = _analyze_mesh_shape(geo_objects)
+
+    if analysis['strategy'] == 'CONVEX_HULL':
+        return _generate_direct_convex(context, geo_objects, asset_name,
+                                       export_target, collider_col, root_empty)
+
+    effective_voxel = _auto_voxel_size(analysis, voxel_size)
+    max_dim = analysis['max_dimension']
+    merge_dist = max_dim * 0.025
 
     merged = _merge_geometry_copies(context, geo_objects)
     if merged is None:
@@ -288,7 +431,7 @@ def generate_smart_collider(context, geo_objects, asset_name, export_target,
 
     remesh_mod = merged.modifiers.new(name="VoxelRemesh", type='REMESH')
     remesh_mod.mode = 'VOXEL'
-    remesh_mod.voxel_size = voxel_size
+    remesh_mod.voxel_size = effective_voxel
     bpy.ops.object.modifier_apply(modifier=remesh_mod.name)
 
     bm = bmesh.new()
@@ -305,6 +448,8 @@ def generate_smart_collider(context, geo_objects, asset_name, export_target,
     parts = [obj for obj in context.selected_objects if obj.type == 'MESH']
     if not parts:
         parts = [merged]
+
+    parts = _filter_tiny_pieces(parts, analysis)
 
     convex_parts = []
     for part in parts:
@@ -338,6 +483,34 @@ def generate_smart_collider(context, geo_objects, asset_name, export_target,
         colliders.append(part)
 
     return colliders
+
+
+def _generate_direct_convex(context, geo_objects, asset_name, export_target,
+                            collider_col, root_empty):
+    merged = _merge_geometry_copies(context, geo_objects)
+    if merged is None:
+        return []
+
+    bpy.ops.object.select_all(action='DESELECT')
+    merged.select_set(True)
+    context.view_layer.objects.active = merged
+
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.mesh.convex_hull()
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+    prefix = 'UCX' if export_target == 'UNREAL' else 'COL'
+    col_name = get_collision_name(asset_name, 1, export_target, prefix)
+    merged.name = col_name
+    merged.data.name = col_name
+
+    for col in list(merged.users_collection):
+        col.objects.unlink(merged)
+
+    _link_collider(merged, collider_col, root_empty)
+
+    return [merged]
 
 
 def clear_colliders(collider_col):

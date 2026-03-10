@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Master Export",
     "author": "Master Exporter Team",
-    "version": (1, 3, 0),
+    "version": (1, 4, 0),
     "blender": (4, 0, 0),
     "location": "View3D > Sidebar > Master Export",
     "description": "Professional asset export management for Unreal Engine and Unity",
@@ -23,13 +23,7 @@ from bpy.types import PropertyGroup
 from .operators.set_export import MASTEREXPORT_OT_SetExport
 from .operators.generate_colliders import MASTEREXPORT_OT_GenerateColliders
 from .operators.export_asset import MASTEREXPORT_OT_ExportAsset
-from .operators.pre_export_check import (
-    MASTEREXPORT_OT_FixDoubles,
-    MASTEREXPORT_OT_FixNormals,
-    MASTEREXPORT_OT_FixTransforms,
-    MASTEREXPORT_OT_FixAll,
-    run_auto_check,
-)
+from .operators.pre_export_check import run_auto_check
 from .ui.panel import (
     MASTEREXPORT_PT_MainPanel,
     MASTEREXPORT_PT_SetExportPanel,
@@ -68,7 +62,7 @@ class MasterExportProperties(PropertyGroup):
         name="Collision Mode",
         description="Collision generation method",
         items=[
-            ('SMART', "Smart Collider", "Voxel remesh + convex hull decomposition"),
+            ('SMART', "Smart Collider", "Analyzes shape and auto-decomposes"),
             ('SIMPLE', "Simple Bounding Box", "Single oriented bounding box"),
         ],
         default='SMART',
@@ -87,7 +81,7 @@ class MasterExportProperties(PropertyGroup):
     smart_voxel_size: FloatProperty(
         name="Voxel Size",
         description="Voxel size for smart collider (smaller = more detail, more pieces)",
-        default=0.1,
+        default=1.0,
         min=0.01,
         max=2.0,
         step=1,
@@ -164,10 +158,6 @@ classes = (
     MASTEREXPORT_OT_SetExport,
     MASTEREXPORT_OT_GenerateColliders,
     MASTEREXPORT_OT_ExportAsset,
-    MASTEREXPORT_OT_FixDoubles,
-    MASTEREXPORT_OT_FixNormals,
-    MASTEREXPORT_OT_FixTransforms,
-    MASTEREXPORT_OT_FixAll,
     MASTEREXPORT_PT_MainPanel,
     MASTEREXPORT_PT_SetExportPanel,
     MASTEREXPORT_PT_ColliderPanel,

@@ -1,23 +1,8 @@
 import bpy
 import bmesh
-from bpy.types import Operator
 from mathutils import Vector
 
 from ..utils.hierarchy import MASTER_COLLECTION_NAME, find_asset_from_object
-
-
-def _get_master_collection():
-    return bpy.data.collections.get(MASTER_COLLECTION_NAME)
-
-
-def _get_all_mesh_objects(collection):
-    meshes = []
-    for obj in collection.objects:
-        if obj.type == 'MESH':
-            meshes.append(obj)
-    for child_col in collection.children:
-        meshes.extend(_get_all_mesh_objects(child_col))
-    return meshes
 
 
 def _count_triangles(obj):
@@ -89,14 +74,6 @@ def _check_rotation(obj):
     return not (abs(r.x) < 0.001 and abs(r.y) < 0.001 and abs(r.z) < 0.001)
 
 
-def _is_collider_name(name):
-    return (
-        name.startswith("UCX_") or name.startswith("UBX_") or
-        name.startswith("USP_") or name.startswith("UCP_") or
-        name.startswith("COL_")
-    )
-
-
 def run_auto_check(context):
     props = context.scene.master_export
     props.check_results.clear()
@@ -162,152 +139,3 @@ def run_auto_check(context):
 
     props.check_total_tris = total_tris
     props.check_issues_found = issues
-
-
-def _get_geometry_targets(context, obj_name=""):
-    active = context.active_object
-    asset_info = find_asset_from_object(active)
-
-    if asset_info is None:
-        master_col = _get_master_collection()
-        if master_col is None:
-            return []
-        all_meshes = _get_all_mesh_objects(master_col)
-        targets = [obj for obj in all_meshes if not _is_collider_name(obj.name)]
-    else:
-        geo_col = asset_info.get('geo_col')
-        if geo_col is None:
-            return []
-        targets = [obj for obj in geo_col.objects if obj.type == 'MESH']
-
-    if obj_name:
-        targets = [obj for obj in targets if obj.name == obj_name]
-
-    return targets
-
-
-def _poll_asset_selected(context):
-    active = context.active_object
-    return find_asset_from_object(active) is not None
-
-
-class MASTEREXPORT_OT_FixDoubles(Operator):
-    bl_idname = "master_export.fix_doubles"
-    bl_label = "Fix Double Vertices"
-    bl_description = "Merge vertices by distance"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    obj_name: bpy.props.StringProperty(default="")
-
-    @classmethod
-    def poll(cls, context):
-        return _poll_asset_selected(context)
-
-    def execute(self, context):
-        targets = _get_geometry_targets(context, self.obj_name)
-        if not targets:
-            self.report({'WARNING'}, "No geometry meshes found")
-            return {'CANCELLED'}
-
-        fixed = 0
-        for obj in targets:
-            bm = bmesh.new()
-            bm.from_mesh(obj.data)
-            bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=0.0001)
-            bm.to_mesh(obj.data)
-            bm.free()
-            obj.data.update()
-            fixed += 1
-
-        run_auto_check(context)
-        self.report({'INFO'}, f"Fixed doubles on {fixed} mesh(es)")
-        return {'FINISHED'}
-
-
-class MASTEREXPORT_OT_FixNormals(Operator):
-    bl_idname = "master_export.fix_normals"
-    bl_label = "Fix Normals"
-    bl_description = "Recalculate normals outside"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    obj_name: bpy.props.StringProperty(default="")
-
-    @classmethod
-    def poll(cls, context):
-        return _poll_asset_selected(context)
-
-    def execute(self, context):
-        targets = _get_geometry_targets(context, self.obj_name)
-        if not targets:
-            self.report({'WARNING'}, "No geometry meshes found")
-            return {'CANCELLED'}
-
-        fixed = 0
-        for obj in targets:
-            bm = bmesh.new()
-            bm.from_mesh(obj.data)
-            bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-            bm.to_mesh(obj.data)
-            bm.free()
-            obj.data.update()
-            fixed += 1
-
-        run_auto_check(context)
-        self.report({'INFO'}, f"Fixed normals on {fixed} mesh(es)")
-        return {'FINISHED'}
-
-
-class MASTEREXPORT_OT_FixTransforms(Operator):
-    bl_idname = "master_export.fix_transforms"
-    bl_label = "Apply Transforms"
-    bl_description = "Apply rotation and scale"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    obj_name: bpy.props.StringProperty(default="")
-
-    @classmethod
-    def poll(cls, context):
-        return _poll_asset_selected(context)
-
-    def execute(self, context):
-        targets = _get_geometry_targets(context, self.obj_name)
-        if not targets:
-            self.report({'WARNING'}, "No geometry meshes found")
-            return {'CANCELLED'}
-
-        prev_active = context.active_object
-        bpy.ops.object.select_all(action='DESELECT')
-        for obj in targets:
-            obj.select_set(True)
-
-        if targets:
-            context.view_layer.objects.active = targets[0]
-            bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
-
-        bpy.ops.object.select_all(action='DESELECT')
-        if prev_active:
-            prev_active.select_set(True)
-            context.view_layer.objects.active = prev_active
-
-        run_auto_check(context)
-        self.report({'INFO'}, f"Applied transforms on {len(targets)} mesh(es)")
-        return {'FINISHED'}
-
-
-class MASTEREXPORT_OT_FixAll(Operator):
-    bl_idname = "master_export.fix_all"
-    bl_label = "Fix All Issues"
-    bl_description = "Fix all detected issues at once"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    @classmethod
-    def poll(cls, context):
-        return _poll_asset_selected(context)
-
-    def execute(self, context):
-        bpy.ops.master_export.fix_doubles()
-        bpy.ops.master_export.fix_normals()
-        bpy.ops.master_export.fix_transforms()
-
-        self.report({'INFO'}, "All fixes applied")
-        return {'FINISHED'}

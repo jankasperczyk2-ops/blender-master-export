@@ -73,7 +73,7 @@ class MASTEREXPORT_PT_ColliderPanel(Panel):
 
         mode_descriptions = {
             'SIMPLE': "One tight-fitting oriented box around all geometry",
-            'SMART': "Voxel remesh + convex hull for precise collision",
+            'SMART': "Analyzes shape, auto-adjusts voxel + convex decomposition",
         }
         desc_box = box.box()
         desc_box.scale_y = 0.7
@@ -103,16 +103,6 @@ class MASTEREXPORT_PT_ExportCheckPanel(Panel):
         if not has_asset:
             info_box = layout.box()
             info_box.label(text="Select an asset object to see stats", icon='INFO')
-
-            fix_box = layout.box()
-            fix_box.label(text="Fix Tools", icon='TOOL_SETTINGS')
-            col = fix_box.column(align=True)
-            col.enabled = False
-            col.operator("master_export.fix_doubles", icon='VERTEXSEL')
-            col.operator("master_export.fix_normals", icon='NORMALS_FACE')
-            col.operator("master_export.fix_transforms", icon='OBJECT_ORIGIN')
-            col.separator()
-            col.operator("master_export.fix_all", icon='FILE_REFRESH')
             return
 
         if props.check_asset_name == "":
@@ -158,43 +148,28 @@ class MASTEREXPORT_PT_ExportCheckPanel(Panel):
                 header_row.label(text=f"{result.tri_count:,} tris")
 
                 if result.has_doubles:
-                    row = item_box.row(align=True)
+                    row = item_box.row()
                     row.alert = True
                     row.label(text=f"Double verts: {result.doubles_count}", icon='ERROR')
-                    op = row.operator("master_export.fix_doubles", text="Fix", icon='TOOL_SETTINGS')
-                    op.obj_name = result.obj_name
 
                 if result.has_flipped:
-                    row = item_box.row(align=True)
+                    row = item_box.row()
                     row.alert = True
                     row.label(text=f"Flipped faces: {result.flipped_count}", icon='ERROR')
-                    op = row.operator("master_export.fix_normals", text="Fix", icon='TOOL_SETTINGS')
-                    op.obj_name = result.obj_name
 
                 if result.bad_scale:
-                    row = item_box.row(align=True)
+                    row = item_box.row()
                     row.alert = True
                     row.label(text=f"Scale: ({result.scale_values})", icon='ERROR')
-                    op = row.operator("master_export.fix_transforms", text="Fix", icon='TOOL_SETTINGS')
-                    op.obj_name = result.obj_name
 
                 if result.bad_rotation:
-                    row = item_box.row(align=True)
+                    row = item_box.row()
                     row.alert = True
                     row.label(text=f"Rotation: ({result.rotation_values})", icon='ERROR')
-                    op = row.operator("master_export.fix_transforms", text="Fix", icon='TOOL_SETTINGS')
-                    op.obj_name = result.obj_name
 
                 if not has_issues:
                     row = item_box.row()
                     row.label(text="Clean", icon='CHECKMARK')
-
-        if props.check_issues_found > 0:
-            layout.separator()
-            row = layout.row()
-            row.scale_y = 1.3
-            row.alert = True
-            row.operator("master_export.fix_all", icon='FILE_REFRESH', text="Fix All Issues")
 
 
 class MASTEREXPORT_PT_ExportPanel(Panel):
